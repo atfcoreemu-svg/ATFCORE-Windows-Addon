@@ -73,7 +73,7 @@ public class ExternalLaunchActivity extends Activity {
             data.put("name", DEFAULT_CONTAINER_NAME);
             // The driver the device suits best (Turnip on Adreno: Vulkan 1.3, so DXVK 2.x and
             // DXGI 1.6, which Unity 6 needs); the container default is Vortek.
-            data.put("graphicsDriver", com.winlator.container.GraphicsDrivers.getDefaultDriver(this));
+            data.put("graphicsDriver", deviceDriver());
         } catch (JSONException e) { fail(e.toString()); return; }
         manager.createContainerAsync(data, container -> runOnUiThread(() -> {
             if (container == null) fail(getString(R.string.atfcore_container_failed));
@@ -83,12 +83,20 @@ public class ExternalLaunchActivity extends Activity {
 
     // Containers made by earlier versions took the generic default (Vortek) even on Adreno GPUs,
     // whose Vortek path reports Vulkan 1.1 and falls back to DXVK 1.10 (no DXGI 1.6): fix once.
+    // OpenGL through Zink (Mesa): Gladio crashed the add-on in glGetCompressedTexImage when Wine
+    // set up OpenGL (Ren'Py, and DirectDraw games such as KiriKiri visual novels).
     private void useDeviceDriver(Container container) {
-        if (!DEFAULT_CONTAINER_NAME.equals(container.getName()) || container.getExtra("atfcoreDriver").equals("t")) return;
-        String device = com.winlator.container.GraphicsDrivers.getDefaultDriver(this);
+        if (!DEFAULT_CONTAINER_NAME.equals(container.getName()) || container.getExtra("atfcoreDriver").equals("2")) return;
+        String device = deviceDriver();
         if (!device.equals(container.getGraphicsDriver())) container.setGraphicsDriver(device);
-        container.putExtra("atfcoreDriver", "t");
+        container.putExtra("atfcoreDriver", "2");
         container.saveData();
+    }
+
+    /** The device's Vulkan driver (Turnip on Adreno, else Vortek) with Zink for OpenGL. */
+    private String deviceDriver() {
+        String vulkan = com.winlator.container.GraphicsDrivers.getDefaultDriver(this).split(",")[0];
+        return vulkan + "," + com.winlator.container.GraphicsDrivers.ZINK;
     }
 
     private void launch(Container container, String execPath) {
@@ -116,7 +124,22 @@ public class ExternalLaunchActivity extends Activity {
 
     // Wine sees only the container's drives: the game's folder (shared storage, e.g. the
     // player's mirror under Android/media) gets a drive letter of its own when no drive holds it.
+    // The game's own folder is the root of drive Y: for this launch, so the game sees short paths
+    // without spaces (Y:\\Game.exe): launchers that build unquoted command lines or paths break on
+    // folders like "test_fixture_21". Y: is reassigned to the current game every launch.
+    static final char GAME_DRIVE = 'Y';
+
     private static void mapGameDrive(Container container, String execPath, String gameRoot) {
+        if (gameRoot != null && execPath.startsWith(gameRoot + "/") && new File(gameRoot).isDirectory()) {
+            StringBuilder drives = new StringBuilder(GAME_DRIVE + ":" + gameRoot);
+            for (com.winlator.container.Drive drive : container.drivesIterator())
+                if (Character.toUpperCase(drive.letter.charAt(0)) != GAME_DRIVE) drives.append(drive.letter).append(':').append(drive.path);
+            if (!drives.toString().equals(container.getDrives())) {
+                container.setDrives(drives.toString());
+                container.saveData();
+            }
+            return;
+        }
         for (com.winlator.container.Drive drive : container.drivesIterator())
             if (execPath.startsWith(drive.path + "/")) return;
         // The player mirrors every game under one folder: one drive serves them all.

@@ -235,7 +235,43 @@ public class WineRegistryEditor implements Closeable {
         return success ? unescape(new String(buffer)) : null;
     }
 
+    // Wine's .reg text form: non-ASCII characters as \xNNNN (4 hex digits, as wineserver writes them).
+    private static String wineEscape(String str) {
+        StringBuilder out = new StringBuilder();
+        for (int i = 0; i < str.length(); i++) {
+            char c = str.charAt(i);
+            if (c == '\\') out.append("\\\\");
+            else if (c == '"') out.append("\\\"");
+            else if (c < 0x80) out.append(c);
+            else out.append(String.format(Locale.ENGLISH, "\\x%04x", (int) c));
+        }
+        return out.toString();
+    }
+
+    /** A string value whose name or data may hold any Unicode text (e.g. Japanese font names). */
+    public void setUnicodeStringValue(String key, String name, String value) {
+        setRawValue(key, wineEscape(name), "\"" + wineEscape(value) + "\"", false);
+    }
+
+    /** A REG_MULTI_SZ value. */
+    public void setMultiStringValue(String key, String name, String... values) {
+        StringBuilder data = new StringBuilder();
+        StringBuilder text = new StringBuilder();
+        for (String v : values) text.append(v).append('\0');
+        text.append('\0');
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (data.length() > 0) data.append(',');
+            data.append(String.format(Locale.ENGLISH, "%02x,%02x", c & 0xff, (c >> 8) & 0xff));
+        }
+        setRawValue(key, wineEscape(name), "hex(7):" + data, false);
+    }
+
     private void setRawValue(String key, String name, String value) {
+        setRawValue(key, name, value, true);
+    }
+
+    private void setRawValue(String key, String name, String value, boolean escapeName) {
         Location keyLocation = getKeyLocation(key);
         if (keyLocation == null) {
             if (createKeyIfNotExist) {
@@ -244,7 +280,7 @@ public class WineRegistryEditor implements Closeable {
             else return;
         }
 
-        Location valueLocation = getValueLocation(keyLocation, name);
+        Location valueLocation = getValueLocation(keyLocation, name, escapeName);
         char[] buffer = new char[StreamUtils.BUFFER_SIZE];
         boolean success = false;
 
@@ -261,7 +297,7 @@ public class WineRegistryEditor implements Closeable {
             }
 
             if (valueLocation == null) {
-                writer.write("\n"+(name != null ? "\""+escape(name)+"\"" : "@")+"="+value);
+                writer.write("\n"+(name != null ? "\""+(escapeName ? escape(name) : name)+"\"" : "@")+"="+value);
             }
             else {
                 writer.write(value);
@@ -435,8 +471,12 @@ public class WineRegistryEditor implements Closeable {
     }
 
     private Location getValueLocation(Location keyLocation, String name) {
+        return getValueLocation(keyLocation, name, true);
+    }
+
+    private Location getValueLocation(Location keyLocation, String name, boolean escapeName) {
         if (!cloneFile.isFile() || keyLocation.start == keyLocation.end) return null;
-        name = name != null ? "\""+escape(name)+"\"=" : "@=";
+        name = name != null ? "\""+(escapeName ? escape(name) : name)+"\"=" : "@=";
         int[] result = getValueLocation(cloneFile.getPath(), keyLocation.toIntArray(), name);
         Location location = new Location(result[0], result[1], result[2]);
         return location.start != -1 ? location : null;

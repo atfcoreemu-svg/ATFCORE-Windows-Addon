@@ -296,6 +296,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         Executors.newSingleThreadExecutor().execute(() -> {
             if (!isGenerateWineprefix()) {
                 setupWineSystemFiles();
+                setupCjkFonts();
                 extractGraphicsDriverFiles();
                 changeWineAudioDriver();
             }
@@ -466,6 +467,43 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
         else AppUtils.restartApplication(this);
         ForegroundService.stopSession(this);
+    }
+
+    // Japanese, Chinese and Korean text: Windows' CJK font names map to the device's CJK font, and
+    // the usual UI fonts fall back to it (FontLink), so glyphs no longer show as boxes. Once per container.
+    private static final String[] CJK_FACES = {"MS Gothic", "MS PGothic", "MS UI Gothic", "MS Mincho", "MS PMincho",
+            "Meiryo", "Meiryo UI", "Yu Gothic", "Yu Gothic UI", "Yu Mincho", "\uFF2D\uFF33 \u30B4\u30B7\u30C3\u30AF",
+            "\uFF2D\uFF33 \uFF30\u30B4\u30B7\u30C3\u30AF", "\uFF2D\uFF33 \u660E\u671D", "\uFF2D\uFF33 \uFF30\u660E\u671D",
+            "\u30E1\u30A4\u30EA\u30AA", "SimSun", "NSimSun", "SimHei", "Microsoft YaHei", "Microsoft JhengHei",
+            "MingLiU", "PMingLiU", "\u5B8B\u4F53", "\u9ED1\u4F53", "Gulim", "Dotum", "Batang", "Malgun Gothic",
+            "\uAD74\uB9BC", "\uB3CB\uC6C0", "\uBC14\uD0D5"};
+    private static final String[] CJK_LINKED = {"Tahoma", "MS Shell Dlg", "MS Shell Dlg 2", "Microsoft Sans Serif",
+            "Segoe UI", "Arial", "Times New Roman", "Lucida Sans Unicode", "Verdana", "Courier New"};
+
+    private void setupCjkFonts() {
+        if (container == null) return;
+        String[][] candidates = {{"/system/fonts/NotoSansCJK-Regular.ttc", "Noto Sans CJK JP"},
+                {"/system/fonts/NotoSerifCJK-Regular.ttc", "Noto Serif CJK JP"},
+                {"/system/fonts/DroidSansFallbackFull.ttf", "Droid Sans Fallback"},
+                {"/system/fonts/DroidSansFallback.ttf", "Droid Sans Fallback"}};
+        String[] font = null;
+        for (String[] c : candidates) if (new File(c[0]).isFile()) { font = c; break; }
+        if (font == null || font[0].equals(container.getExtra("cjkFont"))) return;
+        File rootDir = rootFS.getRootDir();
+        File fontFile = new File(font[0]);
+        File link = new File(rootDir, RootFS.WINEPREFIX + "/drive_c/windows/Fonts/" + fontFile.getName());
+        FileUtils.delete(link);
+        FileUtils.symlink(fontFile, link);
+        File systemReg = new File(rootDir, RootFS.WINEPREFIX + "/system.reg");
+        try (WineRegistryEditor registry = new WineRegistryEditor(systemReg)) {
+            for (String face : CJK_FACES)
+                registry.setUnicodeStringValue("Software\\Microsoft\\Windows NT\\CurrentVersion\\FontSubstitutes", face, font[1]);
+            for (String face : CJK_LINKED)
+                registry.setMultiStringValue("Software\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink", face,
+                        fontFile.getName() + "," + font[1]);
+        }
+        container.putExtra("cjkFont", font[0]);
+        container.saveData();
     }
 
     private void setupWineSystemFiles() {
