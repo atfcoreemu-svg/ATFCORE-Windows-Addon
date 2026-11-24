@@ -260,8 +260,9 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             public void onUpdateWindowContent(Window window) {
                 if (window.id == frameRatingWindowId) frameRating.update();
                 // The game's own window drew something: the loading screen can go.
+                // Any real window counts, message boxes included (a game waiting on one looked stuck).
                 if (gameLoading != null && !window.isDesktopWindow() && window.attributes.isMapped()
-                        && window.getWidth() >= 320 && window.getHeight() >= 200) {
+                        && window.getWidth() >= 96 && window.getHeight() >= 48) {
                     com.winlator.widget.GameLoadingView loading = gameLoading;
                     gameLoading = null;
                     runOnUiThread(loading::finish);

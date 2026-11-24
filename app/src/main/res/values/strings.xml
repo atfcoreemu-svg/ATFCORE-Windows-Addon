@@ -367,4 +367,5 @@
     <string name="atfcore_loading_hint">Windows games take a while to open, longer the first time.</string>
     <string name="atfcore_loading_slow">This is taking a long time. The game may not be compatible, or it may still be loading.</string>
     <string name="atfcore_loading_leave">Leave</string>
+    <string name="atfcore_loading_show">Show the game</string>
 </resources>

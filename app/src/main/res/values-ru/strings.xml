@@ -304,4 +304,5 @@
     <string name="atfcore_loading_hint">Игры для Windows открываются не сразу, в первый раз дольше.</string>
     <string name="atfcore_loading_slow">Это занимает много времени. Игра может быть несовместима или ещё загружается.</string>
     <string name="atfcore_loading_leave">Выйти</string>
+    <string name="atfcore_loading_show">Показать игру</string>
 </resources>

@@ -20,10 +20,10 @@ import com.winlator.R;
  * window first draws; after a long wait it offers to leave.
  */
 public class GameLoadingView extends FrameLayout {
-    private static final long SLOW_MS = 90_000;
+    private static final long SLOW_MS = 90_000, PEEK_MS = 15_000;
     private final long started = SystemClock.uptimeMillis();
     private final TextView elapsed, hint;
-    private final Button leave;
+    private final Button leave, peek;
     private boolean done;
 
     public GameLoadingView(Context context, String title, Runnable onLeave) {
@@ -64,6 +64,19 @@ public class GameLoadingView extends FrameLayout {
         leave.setOnClickListener(v -> onLeave.run());
         column.addView(leave, margins(18 * d));
 
+        // After a while the player can look behind this screen (a dialog may be waiting there).
+        peek = new Button(context);
+        peek.setText(R.string.atfcore_loading_show);
+        peek.setAllCaps(false);
+        peek.setTextColor(0xFF23121B);
+        GradientDrawable copper = new GradientDrawable();
+        copper.setColor(0xFFFFAA7D);
+        copper.setCornerRadius(10 * d);
+        peek.setBackground(copper);
+        peek.setVisibility(GONE);
+        peek.setOnClickListener(v -> finish());
+        column.addView(peek, margins(18 * d));
+
         addView(column, new LayoutParams(-1, -2, Gravity.CENTER));
         tick();
     }
@@ -88,6 +101,7 @@ public class GameLoadingView extends FrameLayout {
         long ms = SystemClock.uptimeMillis() - started;
         long s = ms / 1000;
         elapsed.setText(s / 60 + ":" + String.format("%02d", s % 60));
+        if (ms >= PEEK_MS && peek.getVisibility() != VISIBLE) peek.setVisibility(VISIBLE);
         if (ms >= SLOW_MS && leave.getVisibility() != VISIBLE) {
             hint.setText(R.string.atfcore_loading_slow);
             leave.setVisibility(VISIBLE);
