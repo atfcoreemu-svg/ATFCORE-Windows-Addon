@@ -113,6 +113,8 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     private InputControlsManager inputControlsManager;
     private RootFS rootFS;
     private FrameRating frameRating;
+    // ATFCORE: per-game settings sent with the launch (keys as in shortcut extras).
+    private org.json.JSONObject launchSettings = new org.json.JSONObject();
     private Runnable editInputControlsCallback;
     private Shortcut shortcut;
     private String[] graphicsDriver = {GraphicsDrivers.DEFAULT_VULKAN_DRIVER, GraphicsDrivers.DEFAULT_OPENGL_DRIVER};
@@ -203,6 +205,22 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             String graphicsDriverConfig = container.getGraphicsDriverConfig();
             audioDriverConfig = new KeyValueSet(container.getAudioDriverConfig());
             screenInfo = resolveScreenInfo(container.getScreenSize());
+
+            String settingsJson = getIntent().getStringExtra("atfcore_settings");
+            if (settingsJson != null) {
+                try { launchSettings = new org.json.JSONObject(settingsJson); }
+                catch (org.json.JSONException e) { android.util.Log.w("ATFCORE", "ignored launch settings: " + e); }
+            }
+            graphicsDriver = launchSetting("graphicsDriver", graphicsDriver);
+            String vulkanDriver = launchSetting("vulkanDriver", ""), openglDriver = launchSetting("openglDriver", "");
+            if (!vulkanDriver.isEmpty() || !openglDriver.isEmpty()) {
+                String[] drivers = GraphicsDrivers.parseIdentifiers(graphicsDriver);
+                graphicsDriver = (vulkanDriver.isEmpty() ? drivers[0] : vulkanDriver) + "," + (openglDriver.isEmpty() ? drivers[1] : openglDriver);
+            }
+            audioDriver = launchSetting("audioDriver", audioDriver);
+            dxwrapper = launchSetting("dxwrapper", dxwrapper);
+            dxwrapperConfig = launchSetting("dxwrapperConfig", dxwrapperConfig);
+            if (!launchSetting("screenSize", "").isEmpty()) screenInfo = resolveScreenInfo(launchSetting("screenSize", ""));
 
             if (shortcut != null) {
                 graphicsDriver = shortcut.getExtra("graphicsDriver", container.getGraphicsDriver());
@@ -516,9 +534,10 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
             envVars.putAll(container.getEnvVars());
             if (shortcut != null) envVars.putAll(shortcut.getExtra("envVars"));
+            if (!launchSetting("envVars", "").isEmpty()) envVars.putAll(launchSetting("envVars", ""));
             if (!envVars.has("WINEESYNC")) envVars.put("WINEESYNC", "1");
 
-            guestProgramLauncherComponent.setBox64Preset(shortcut != null ? shortcut.getExtra("box64Preset", container.getBox64Preset()) : container.getBox64Preset());
+            guestProgramLauncherComponent.setBox64Preset(shortcut != null ? shortcut.getExtra("box64Preset", container.getBox64Preset()) : launchSetting("box64Preset", container.getBox64Preset()));
         }
 
         environment = new XEnvironment(this, rootFS);
@@ -586,7 +605,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         renderer.setCursorVisible(false);
         renderer.setCursorColor(preferences.getInt("cursor_color", 0xffffff));
         renderer.setCursorScale(preferences.getFloat("cursor_scale", 1.0f));
-        renderer.setForceWindowsFullscreen(shortcut != null && shortcut.getExtra("forceFullscreen", "0").equals("1"));
+        renderer.setForceWindowsFullscreen(shortcut != null ? shortcut.getExtra("forceFullscreen", "0").equals("1") : launchSetting("forceFullscreen", "0").equals("1"));
 
         xServer.setRenderer(renderer);
         rootView.addView(xServerView);
@@ -612,9 +631,12 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         inputControlsView.setVisibility(View.GONE);
         rootView.addView(inputControlsView);
 
-        if (container != null && container.getHUDMode() != FrameRating.Mode.DISABLED.ordinal()) {
+        int hudMode = container != null ? container.getHUDMode() : 0;
+        try { hudMode = Integer.parseInt(launchSetting("hudMode", String.valueOf(hudMode))); } catch (NumberFormatException ignored) {}
+        if (hudMode < 0 || hudMode >= FrameRating.Mode.values().length) hudMode = 0;
+        if (container != null && hudMode != FrameRating.Mode.DISABLED.ordinal()) {
             frameRating = new FrameRating(this);
-            frameRating.setMode(FrameRating.Mode.values()[container.getHUDMode()]);
+            frameRating.setMode(FrameRating.Mode.values()[hudMode]);
             frameRating.setVisibility(View.GONE);
             rootView.addView(frameRating);
         }
@@ -946,6 +968,11 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
     private boolean isGenerateWineprefix() {
         return getIntent().getBooleanExtra("generate_wineprefix", false);
+    }
+
+    private String launchSetting(String key, String fallback) {
+        String value = launchSettings.optString(key, "");
+        return value.isEmpty() ? fallback : value;
     }
 
     private String getWineStartCommand() {

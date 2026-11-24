@@ -23,6 +23,12 @@ import java.util.ArrayList;
  * Intent extras:
  *   exec_path  absolute path of the .exe on shared storage (required)
  *   title      game title (optional, for messages)
+ *   unity_single_thread  Unity players render on one thread (recommended mode)
+ *   game_root  folder the game owns (mapped to a drive when no drive holds it; optional)
+ *   exec_args  extra arguments for the game (optional)
+ *   atfcore_settings  JSON of per-game overrides, same keys as shortcut extras (optional):
+ *              screenSize, graphicsDriver, dxwrapper, dxwrapperConfig, audioDriver, box64Preset,
+ *              vulkanDriver, openglDriver, envVars, forceFullscreen, hudMode
  *
  * Result: RESULT_OK when the game was started, RESULT_CANCELED with an "error" extra otherwise.
  */
@@ -30,6 +36,9 @@ public class ExternalLaunchActivity extends Activity {
     public static final String EXTRA_EXEC_PATH = "exec_path";
     public static final String EXTRA_SINGLE_THREAD = "unity_single_thread";
     public static final String EXTRA_TITLE = "title";
+    public static final String EXTRA_ARGS = "exec_args";
+    public static final String EXTRA_SETTINGS = "atfcore_settings";
+    public static final String EXTRA_ROOT = "game_root";
     public static final String EXTRA_ERROR = "error";
     private static final String DEFAULT_CONTAINER_NAME = "ATFCORE";
 
@@ -64,15 +73,21 @@ public class ExternalLaunchActivity extends Activity {
     }
 
     private void launch(Container container, String execPath) {
-        mapGameDrive(container, execPath);
+        mapGameDrive(container, execPath, getIntent().getStringExtra(EXTRA_ROOT));
         Intent intent = new Intent(this, XServerDisplayActivity.class);
         intent.putExtra("container_id", container.id);
         intent.putExtra("exec_path", execPath);
         // Unity players: a frameless window (the game keeps its own windowed/fullscreen setting).
+        String args = "";
         if (new File(new File(execPath).getParentFile(), "UnityPlayer.dll").isFile()) {
             boolean singleThread = getIntent().getBooleanExtra(EXTRA_SINGLE_THREAD, false);
-            intent.putExtra("exec_args", singleThread ? "-popupwindow -force-gfx-direct" : "-popupwindow");
+            args = singleThread ? "-popupwindow -force-gfx-direct" : "-popupwindow";
         }
+        String extra = getIntent().getStringExtra(EXTRA_ARGS);
+        if (extra != null && !extra.trim().isEmpty()) args = (args + " " + extra.trim()).trim();
+        if (!args.isEmpty()) intent.putExtra("exec_args", args);
+        String settings = getIntent().getStringExtra(EXTRA_SETTINGS);
+        if (settings != null) intent.putExtra(EXTRA_SETTINGS, settings);
         startActivity(intent);
         setResult(RESULT_OK);
         finish();
@@ -80,13 +95,15 @@ public class ExternalLaunchActivity extends Activity {
 
     // Wine sees only the container's drives: the game's folder (shared storage, e.g. the
     // player's mirror under Android/media) gets a drive letter of its own when no drive holds it.
-    private static void mapGameDrive(Container container, String execPath) {
+    private static void mapGameDrive(Container container, String execPath, String gameRoot) {
         for (com.winlator.container.Drive drive : container.drivesIterator())
             if (execPath.startsWith(drive.path + "/")) return;
         // The player mirrors every game under one folder: one drive serves them all.
         final String mirror = "/Android/media/dev.openscene.player/windows";
         int at = execPath.indexOf(mirror + "/");
-        String folder = at >= 0 ? execPath.substring(0, at + mirror.length()) : new File(execPath).getParent();
+        String folder = at >= 0 ? execPath.substring(0, at + mirror.length())
+                : gameRoot != null && execPath.startsWith(gameRoot + "/") ? new File(gameRoot).getParent()
+                : new File(execPath).getParent();
         if (folder == null) return;
         String drives = container.getDrives();
         java.util.Set<String> used = new java.util.HashSet<>();
