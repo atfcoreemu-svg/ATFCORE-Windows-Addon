@@ -62,14 +62,33 @@ public class ExternalLaunchActivity extends Activity {
         Container existing = null;
         for (Container c : containers) if (DEFAULT_CONTAINER_NAME.equals(c.getName())) existing = c;
         if (existing == null && !containers.isEmpty()) existing = containers.get(0);
-        if (existing != null) { launch(existing, execPath); return; }
+        if (existing != null) {
+            useDeviceDriver(existing);
+            launch(existing, execPath);
+            return;
+        }
 
         JSONObject data = new JSONObject();
-        try { data.put("name", DEFAULT_CONTAINER_NAME); } catch (JSONException e) { fail(e.toString()); return; }
+        try {
+            data.put("name", DEFAULT_CONTAINER_NAME);
+            // The driver the device suits best (Turnip on Adreno: Vulkan 1.3, so DXVK 2.x and
+            // DXGI 1.6, which Unity 6 needs); the container default is Vortek.
+            data.put("graphicsDriver", com.winlator.container.GraphicsDrivers.getDefaultDriver(this));
+        } catch (JSONException e) { fail(e.toString()); return; }
         manager.createContainerAsync(data, container -> runOnUiThread(() -> {
             if (container == null) fail(getString(R.string.atfcore_container_failed));
             else launch(container, execPath);
         }));
+    }
+
+    // Containers made by earlier versions took the generic default (Vortek) even on Adreno GPUs,
+    // whose Vortek path reports Vulkan 1.1 and falls back to DXVK 1.10 (no DXGI 1.6): fix once.
+    private void useDeviceDriver(Container container) {
+        if (!DEFAULT_CONTAINER_NAME.equals(container.getName()) || container.getExtra("atfcoreDriver").equals("t")) return;
+        String device = com.winlator.container.GraphicsDrivers.getDefaultDriver(this);
+        if (!device.equals(container.getGraphicsDriver())) container.setGraphicsDriver(device);
+        container.putExtra("atfcoreDriver", "t");
+        container.saveData();
     }
 
     private void launch(Container container, String execPath) {
@@ -77,6 +96,8 @@ public class ExternalLaunchActivity extends Activity {
         Intent intent = new Intent(this, XServerDisplayActivity.class);
         intent.putExtra("container_id", container.id);
         intent.putExtra("exec_path", execPath);
+        String title = getIntent().getStringExtra(EXTRA_TITLE);
+        intent.putExtra("title", title != null ? title : new File(execPath).getName());
         // Unity players: a frameless window (the game keeps its own windowed/fullscreen setting).
         String args = "";
         if (new File(new File(execPath).getParentFile(), "UnityPlayer.dll").isFile()) {

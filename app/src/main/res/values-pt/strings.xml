@@ -302,4 +302,9 @@
     <string name="atfcore_missing_executable">O executável do jogo não foi encontrado.</string>
     <string name="atfcore_setup_first">O ATFCORE Windows está terminando a primeira configuração. Abra o jogo de novo quando terminar.</string>
     <string name="atfcore_container_failed">Não foi possível criar o ambiente Windows.</string>
+    <string name="atfcore_loading_game">Iniciando o jogo…</string>
+    <string name="atfcore_loading_title">Iniciando %1$s…</string>
+    <string name="atfcore_loading_hint">Jogos Windows demoram um pouco para abrir, mais na primeira vez.</string>
+    <string name="atfcore_loading_slow">Está demorando muito. O jogo pode não ser compatível, ou ainda estar carregando.</string>
+    <string name="atfcore_loading_leave">Sair</string>
 </resources>

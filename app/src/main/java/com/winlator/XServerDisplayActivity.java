@@ -113,6 +113,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
     private InputControlsManager inputControlsManager;
     private RootFS rootFS;
     private FrameRating frameRating;
+    private com.winlator.widget.GameLoadingView gameLoading;   // ATFCORE: shown until the game draws
     // ATFCORE: per-game settings sent with the launch (keys as in shortcut extras).
     private org.json.JSONObject launchSettings = new org.json.JSONObject();
     private Runnable editInputControlsCallback;
@@ -258,6 +259,13 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
             @Override
             public void onUpdateWindowContent(Window window) {
                 if (window.id == frameRatingWindowId) frameRating.update();
+                // The game's own window drew something: the loading screen can go.
+                if (gameLoading != null && !window.isDesktopWindow() && window.attributes.isMapped()
+                        && window.getWidth() >= 320 && window.getHeight() >= 200) {
+                    com.winlator.widget.GameLoadingView loading = gameLoading;
+                    gameLoading = null;
+                    runOnUiThread(loading::finish);
+                }
             }
 
             @Override
@@ -609,6 +617,9 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
 
         xServer.setRenderer(renderer);
         rootView.addView(xServerView);
+        if (getIntent().hasExtra("exec_path") && getIntent().hasExtra("title")) {
+            gameLoading = new com.winlator.widget.GameLoadingView(this, getIntent().getStringExtra("title"), this::exit);
+        }
 
         globalCursorSpeed = preferences.getFloat("cursor_speed", 1.0f);
         capturePointerOnExternalMouse = preferences.getBoolean("capture_pointer_on_external_mouse", true);
@@ -650,6 +661,7 @@ public class XServerDisplayActivity extends AppCompatActivity implements Navigat
         }
 
         if (MainActivity.DEBUG_MODE) rootView.addView(AppUtils.createDebugMsgTextView(this));
+        if (gameLoading != null) rootView.addView(gameLoading, new FrameLayout.LayoutParams(-1, -1));
         AppUtils.observeSoftKeyboardVisibility(drawerLayout, renderer::setScreenOffsetYRelativeToCursor);
     }
 

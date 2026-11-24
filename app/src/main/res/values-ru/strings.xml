@@ -299,4 +299,9 @@
     <string name="enable_background_wakelock">Включить wakelock, когда устройство заблокировано</string>
     <string name="save_mem_on_run_from_steam">Экономия памяти при запуске из Steam</string>
     <string name="present_mode">Режим презентации</string>
+    <string name="atfcore_loading_game">Запуск игры…</string>
+    <string name="atfcore_loading_title">Запуск %1$s…</string>
+    <string name="atfcore_loading_hint">Игры для Windows открываются не сразу, в первый раз дольше.</string>
+    <string name="atfcore_loading_slow">Это занимает много времени. Игра может быть несовместима или ещё загружается.</string>
+    <string name="atfcore_loading_leave">Выйти</string>
 </resources>
