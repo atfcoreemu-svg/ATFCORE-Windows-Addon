@@ -126,7 +126,7 @@ public class ExternalLaunchActivity extends Activity {
     // player's mirror under Android/media) gets a drive letter of its own when no drive holds it.
     // The game's own folder is the root of drive Y: for this launch, so the game sees short paths
     // without spaces (Y:\\Game.exe): launchers that build unquoted command lines or paths break on
-    // folders like "test_fixture_21". Y: is reassigned to the current game every launch.
+    // folder names with spaces. Y: is reassigned to the current game every launch.
     static final char GAME_DRIVE = 'Y';
 
     private static void mapGameDrive(Container container, String execPath, String gameRoot) {
