@@ -39,6 +39,12 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
     private long lastLeftTapUpTime;
     private final int doubleTapSlop;
     private final Runnable finishLeftClick = this::finishLeftClick;
+    private Finger pendingHold;
+    private final Runnable startLeftHold = () -> {
+        Finger finger = pendingHold;
+        pendingHold = null;
+        if (finger != null && numFingers == 1) pressLeftAtFinger(finger);
+    };
     private Finger fingerPointerButtonRight;
     private float scrollAccumY = 0;
     private boolean scrolling = false;
@@ -156,6 +162,7 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
             case MotionEvent.ACTION_DOWN:
             case MotionEvent.ACTION_POINTER_DOWN:
                 if (event.isFromSource(InputDevice.SOURCE_MOUSE)) return true;
+                cancelPendingHold();
                 scrollAccumY = 0;
                 scrolling = false;
                 fingers[pointerId] = new Finger(event.getX(actionIndex), event.getY(actionIndex));
@@ -169,7 +176,10 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
                 if (secondTap) {
                     removeCallbacks(finishLeftClick);
                     finishLeftClick();
-                    pressPointerButtonLeft(finger);
+                    pressLeftAtFinger(finger);
+                } else if (actionMasked == MotionEvent.ACTION_DOWN && pointerButtonLeftEnabled) {
+                    pendingHold = finger;
+                    postDelayed(startLeftHold, ViewConfiguration.getLongPressTimeout());
                 }
                 break;
             case MotionEvent.ACTION_MOVE:
@@ -183,6 +193,9 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
                             int pointerIndex = event.findPointerIndex(i);
                             if (pointerIndex >= 0) {
                                 fingers[i].update(event.getX(pointerIndex), event.getY(pointerIndex));
+                                if (fingers[i] == pendingHold && fingers[i].travelDistance() >= MAX_TAP_TRAVEL_DISTANCE) {
+                                    cancelPendingHold();
+                                }
                                 handleFingerMove(fingers[i]);
                             }
                             else {
@@ -204,6 +217,7 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
                 }
                 break;
             case MotionEvent.ACTION_CANCEL:
+                cancelPendingHold();
                 lastLeftTap = null;
                 removeCallbacks(finishLeftClick);
                 finishLeftClick();
@@ -216,7 +230,19 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
         return true;
     }
 
+    private void cancelPendingHold() {
+        pendingHold = null;
+        removeCallbacks(startLeftHold);
+    }
+
+    private void pressLeftAtFinger(Finger finger) {
+        if (!isEnabled() || !pointerButtonLeftEnabled || xServer.pointer.isButtonPressed(Pointer.Button.BUTTON_LEFT)) return;
+        if (moveCursorToTouchpoint) xServer.injectPointerMove(finger.x, finger.y);
+        pressPointerButtonLeft(finger);
+    }
+
     private void handleFingerUp(Finger finger1, long eventTime, boolean allowTap) {
+        if (finger1 == pendingHold) cancelPendingHold();
         if (finger1 == fingerPointerButtonLeft) {
             releasePointerButtonLeft(finger1);
             return;
