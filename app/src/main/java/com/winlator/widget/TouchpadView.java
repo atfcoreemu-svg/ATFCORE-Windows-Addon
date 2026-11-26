@@ -5,6 +5,7 @@ import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.StateListDrawable;
 import android.view.InputDevice;
+import android.view.ViewConfiguration;
 import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
@@ -34,6 +35,10 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
     private boolean pointerButtonRightEnabled = true;
     private boolean moveCursorToTouchpoint = false;
     private Finger fingerPointerButtonLeft;
+    private Finger lastLeftTap;
+    private long lastLeftTapUpTime;
+    private final int doubleTapSlop;
+    private final Runnable finishLeftClick = this::finishLeftClick;
     private Finger fingerPointerButtonRight;
     private float scrollAccumY = 0;
     private boolean scrolling = false;
@@ -44,6 +49,7 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
     public TouchpadView(Context context, XServer xServer, boolean capturePointerOnExternalMouse) {
         super(context);
         this.xServer = xServer;
+        doubleTapSlop = ViewConfiguration.get(context).getScaledDoubleTapSlop();
         setLayoutParams(new FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
         setBackground(createTransparentBackground());
         setClickable(true);
@@ -95,8 +101,11 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
         private int lastX;
         private int lastY;
         private final long touchTime;
+        private final float screenStartX, screenStartY;
 
         public Finger(float x, float y) {
+            screenStartX = x;
+            screenStartY = y;
             float[] transformedPoint = XForm.transformPoint(xform, x, y);
             this.x = this.startX = this.lastX = (int)transformedPoint[0];
             this.y = this.startY = this.lastY = (int)transformedPoint[1];
@@ -151,6 +160,17 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
                 scrolling = false;
                 fingers[pointerId] = new Finger(event.getX(actionIndex), event.getY(actionIndex));
                 numFingers++;
+                Finger finger = fingers[pointerId];
+                boolean secondTap = actionMasked == MotionEvent.ACTION_DOWN && lastLeftTap != null
+                        && event.getEventTime() - lastLeftTapUpTime <= ViewConfiguration.getDoubleTapTimeout()
+                        && Math.hypot(finger.screenStartX - lastLeftTap.screenStartX,
+                                      finger.screenStartY - lastLeftTap.screenStartY) <= doubleTapSlop;
+                lastLeftTap = null;
+                if (secondTap) {
+                    removeCallbacks(finishLeftClick);
+                    finishLeftClick();
+                    pressPointerButtonLeft(finger);
+                }
                 break;
             case MotionEvent.ACTION_MOVE:
                 if (event.isFromSource(InputDevice.SOURCE_MOUSE)) {
@@ -166,7 +186,7 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
                                 handleFingerMove(fingers[i]);
                             }
                             else {
-                                handleFingerUp(fingers[i]);
+                                handleFingerUp(fingers[i], event.getEventTime(), false);
                                 fingers[i] = null;
                                 numFingers--;
                             }
@@ -178,12 +198,16 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
             case MotionEvent.ACTION_POINTER_UP:
                 if (fingers[pointerId] != null) {
                     fingers[pointerId].update(event.getX(actionIndex), event.getY(actionIndex));
-                    handleFingerUp(fingers[pointerId]);
+                    handleFingerUp(fingers[pointerId], event.getEventTime(), true);
                     fingers[pointerId] = null;
                     numFingers--;
                 }
                 break;
             case MotionEvent.ACTION_CANCEL:
+                lastLeftTap = null;
+                removeCallbacks(finishLeftClick);
+                finishLeftClick();
+                if (fingerPointerButtonRight != null) releasePointerButtonRight(fingerPointerButtonRight);
                 for (byte i = 0; i < MAX_FINGERS; i++) fingers[i] = null;
                 numFingers = 0;
                 break;
@@ -192,12 +216,24 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
         return true;
     }
 
-    private void handleFingerUp(Finger finger1) {
+    private void handleFingerUp(Finger finger1, long eventTime, boolean allowTap) {
+        if (finger1 == fingerPointerButtonLeft) {
+            releasePointerButtonLeft(finger1);
+            return;
+        }
+        if (!allowTap) {
+            releasePointerButtonRight(finger1);
+            return;
+        }
         switch (numFingers) {
             case 1:
                 if (finger1.isTap()) {
                     if (moveCursorToTouchpoint) xServer.injectPointerMove(finger1.x, finger1.y);
                     pressPointerButtonLeft(finger1);
+                    if (fingerPointerButtonLeft == finger1) {
+                        lastLeftTap = finger1;
+                        lastLeftTapUpTime = eventTime;
+                    }
                 }
                 break;
             case 2:
@@ -305,12 +341,18 @@ public class TouchpadView extends View implements View.OnCapturedPointerListener
         }
     }
 
-    private void releasePointerButtonLeft(final Finger finger) {
-        if (isEnabled() && pointerButtonLeftEnabled && finger == fingerPointerButtonLeft && xServer.pointer.isButtonPressed(Pointer.Button.BUTTON_LEFT)) {
-            postDelayed(() -> {
-                xServer.injectPointerButtonRelease(Pointer.Button.BUTTON_LEFT);
-                fingerPointerButtonLeft = null;
-            }, 30);
+    private void releasePointerButtonLeft(Finger finger) {
+        if (finger == fingerPointerButtonLeft) {
+            removeCallbacks(finishLeftClick);
+            postDelayed(finishLeftClick, 30);
+        }
+    }
+
+    private void finishLeftClick() {
+        if (fingerPointerButtonLeft == null) return;
+        fingerPointerButtonLeft = null;
+        if (xServer.pointer.isButtonPressed(Pointer.Button.BUTTON_LEFT)) {
+            xServer.injectPointerButtonRelease(Pointer.Button.BUTTON_LEFT);
         }
     }
 
